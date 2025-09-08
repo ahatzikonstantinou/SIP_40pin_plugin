@@ -1,0 +1,356 @@
+$def with (m_vals, rpi_pins)
+
+$var title: $_(u'SIP - 40pin Settings')
+$var page: plugins
+<script>
+   // Initialize behaviors
+   jQuery(document).ready(function(){
+
+      jQuery("#cSubmit").click(function() {
+         jQuery("#pluginForm").submit();
+      });
+      jQuery("button#cCancel").click(function(){
+         window.location="/";
+      });
+
+       jQuery("button#docButton").click(function(){
+           window.open("/static/docs/plugins/40pin-docs.html", "_blank");
+       })
+
+   });
+</script>
+
+<div id="plugin">
+   <div class="title">$_(u'40pin Settings')
+   <button class="execute" id="docButton" type="button" >$_(u'Setup Help')</button>
+   </div>
+   <p>$_(u'This plugin allows SIP to control specific pins.')
+   </p>
+   <br>
+   <form id="pluginForm" action="/40pinu" method="post">
+   <!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Raspberry Pi GPIO Table</title>
+  <style>
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      font-family: sans-serif;
+    }
+    th, td {
+      border: 1px solid #ccc;
+      padding: 6px;
+      text-align: center;
+    }
+    .circle {
+      display: inline-block;
+      width: 24px;
+      height: 24px;
+      line-height: 24px;
+      border-radius: 50%;
+      background: #eee;
+      font-weight: bold;
+    }
+    .warning {
+      color: red;
+      font-weight: bold;
+    }
+    .modal {
+      display: none;
+      position: fixed;
+      top: 30%;
+      left: 50%;
+      transform: translate(-50%, -30%);
+      background: white;
+      border: 2px solid #444;
+      padding: 20px;
+      z-index: 1000;
+    }
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0,0,0,0.5);
+      z-index: 999;
+    }
+  </style>
+</head>
+<body>
+
+<h2>Raspberry Pi GPIO Header</h2>
+<table id="gpioTable">
+  <thead>
+    <tr>
+      <th>Notes</th>
+      <th>Enable</th>
+      <th>Order</th>
+      <th>GPIO</th>
+      <th>Pin</th>
+      <th>Pin</th>
+      <th>GPIO</th>
+      <th>Order</th>
+      <th>Enable</th>
+      <th>Notes</th>
+    </tr>
+  </thead>
+  <tbody>    
+  </tbody>
+</table>
+
+<div class='option' title='Active low means the relay turns on when the input is low and turns off when the input is high. Active high does the opposite.'><span class='label'>$_(u'Active'):</span>
+      <input type="radio" name="active" value="low" ${" checked" if m_vals[u"active"]==u"low" else u""}>$_('Low')
+      <input type="radio" name="active" value="high" ${" checked" if m_vals[u"active"]==u"high" else u""}>$_('High')
+      <span class='tooltip'>$_('Active low means the relay turns on when the input is low and turns off when the input is high. Active high does the opposite.')</span>
+   </div>
+   <br>
+<br>
+
+<div class="modal-overlay" id="modalOverlay"></div>
+<div class="modal" id="modalDialog">
+  <p class="warning">⚠️ Duplicate "order" values detected!</p>
+  <button onclick="closeModal()">Close</button>
+</div>
+
+   <br>
+   <p><b>$_(u'IMPORTANT'):</b> $_(u'If') <b>$_(u'Trigger level')</b> $_(u'is changed'), <b>$_(u'Relay channels')</b> $_(u'will be set to') <b>1</b> $_(u'to prevent all the relays being switched on, and possibly damaging the power supply.')
+         $_(u'After verifying that the first relay is off, return to this page and set') <b>$_(u'Relay channels')</b> $_(u'to the correct number.')
+   </p>
+   </form>
+</div>
+
+<button onclick="checkDuplicates(true)">Save</button>
+<div class="controls">
+    <button id="cSubmit" class="submit"><b>$_(u'Submit')</b></button>
+    <button id="cCancel" class="cancel danger">$_(u'Cancel')</button>
+</div>
+
+<script>
+const rpiPins = $:rpi_pins;
+
+// Reusable dropdown generator
+function createOrderDropdown(id, selectedValue = "") {
+  const select = document.createElement("select");
+  select.id = `order_$${id}`;
+  select.name = `order_$${id}`;
+  select.className = "order";
+
+  const defaultOption = document.createElement("option");
+  defaultOption.text = "--";
+  defaultOption.value = "";
+  select.appendChild(defaultOption);
+
+  for (let i = 1; i <= 30; i++) {
+    const option = document.createElement("option");
+    option.value = i;
+    option.text = i;
+    if (String(i) === String(selectedValue)) {
+      option.selected = true;
+    }
+    select.appendChild(option);
+  }
+
+  return select;
+}
+
+// Row generator
+function createGPIORow(pinLeft, labelL, isGPIOL, notesL, enabledL, orderL, pinRight, labelR, isGPIOR, notesR, enabledR, orderR, rowIndex) {
+  const tr = document.createElement("tr");
+
+  // Notes (left)
+  const tdNotesLeft = document.createElement("td");
+  const inputNotesLeft = document.createElement("input");
+  inputNotesLeft.type = "text";
+  inputNotesLeft.id = `notes_$${pinLeft}`;
+  inputNotesLeft.name = `notes_$${pinLeft}`;
+  inputNotesLeft.value = notesL || "";
+  tdNotesLeft.appendChild(inputNotesLeft);
+  tr.appendChild(tdNotesLeft);
+
+  // Enable (left)
+  const tdEnableLeft = document.createElement("td");
+  if(isGPIOL)
+  {
+    const checkboxLeft = document.createElement("input");
+    checkboxLeft.type = "checkbox";
+    checkboxLeft.id = `enable_$${pinLeft}`
+    checkboxLeft.name = `enable_$${pinLeft}`
+    checkboxLeft.className = "enable";
+    checkboxLeft.setAttribute("data-side", "left");
+    checkboxLeft.checked = !!enabledL;
+    tdEnableLeft.appendChild(checkboxLeft);
+  }
+  tr.appendChild(tdEnableLeft);
+
+  // Order (left)
+  const tdOrderLeft = document.createElement("td");
+  if(isGPIOL)
+  {
+    tdOrderLeft.appendChild(createOrderDropdown(pinLeft, orderL));
+  }
+  tr.appendChild(tdOrderLeft);
+
+  // GPIO (left)
+  const tdGPIOLabelLeft = document.createElement("td");
+  tdGPIOLabelLeft.textContent = labelL;
+  tr.appendChild(tdGPIOLabelLeft);
+
+  // Pin (left)
+  const tdPinLeft = document.createElement("td");
+  const spanPinLeft = document.createElement("span");
+  spanPinLeft.className = "circle";
+  spanPinLeft.textContent = pinLeft;
+  tdPinLeft.appendChild(spanPinLeft);
+  tr.appendChild(tdPinLeft);
+
+  // Pin (right)
+  const tdPinRight = document.createElement("td");
+  const spanPinRight = document.createElement("span");
+  spanPinRight.className = "circle";
+  spanPinRight.textContent = pinRight;
+  tdPinRight.appendChild(spanPinRight);
+  tr.appendChild(tdPinRight);
+
+  // GPIO (right)
+  const tdGPIOLabelRight = document.createElement("td");
+  tdGPIOLabelRight.textContent = labelR;
+  tr.appendChild(tdGPIOLabelRight);
+
+  // Order (right)
+  const tdOrderRight = document.createElement("td");
+  if(isGPIOR)
+  {
+      tdOrderRight.appendChild(createOrderDropdown(pinRight, orderR));
+  }
+  tr.appendChild(tdOrderRight);
+
+  // Enable (right)
+  const tdEnableRight = document.createElement("td");
+  if(isGPIOR)
+  {
+    const checkboxRight = document.createElement("input");
+    checkboxRight.type = "checkbox";
+    checkboxRight.id = `enable_$${pinRight}`
+    checkboxRight.name = `enable_$${pinRight}`
+    checkboxRight.className = "enable";
+    checkboxRight.setAttribute("data-side", "right");
+    checkboxRight.checked = !!enabledR;
+    tdEnableRight.appendChild(checkboxRight);
+  }
+  tr.appendChild(tdEnableRight);
+
+  // Notes (right)
+  const tdNotesRight = document.createElement("td");
+  const inputNotesRight = document.createElement("input");
+  inputNotesRight.type = "text";
+  inputNotesRight.id = `notes_$${pinRight}`;
+  inputNotesRight.name = `notes_$${pinRight}`;
+  inputNotesRight.value = notesR || "";
+  tdNotesRight.appendChild(inputNotesRight);
+  tr.appendChild(tdNotesRight);
+
+  return tr;
+}
+
+// Assuming rpiPins is already declared as shown earlier
+// And createGPIORow() is defined to accept: (pinLeft, labelL, isGPIOL, notesL, enabledL, orderL, pinRight, labelR, isGPIOR, notesR, enabledR, orderR, rowIndex)
+// Merge and build rows
+document.addEventListener("DOMContentLoaded", function () {
+  const pinsData = window.params?.pins || [];
+  const tableBody = document.querySelector("#gpioTable tbody");
+
+  for (let i = 0; i < rpiPins.length; i += 2) {
+    const metaLeft = rpiPins[i];
+    const metaRight = rpiPins[i + 1];
+    const userLeft = pinsData.find(p => p.pin === metaLeft[0]) || {};
+    const userRight = pinsData.find(p => p.pin === metaRight[0]) || {};
+
+    const pinLeft = metaLeft[0];
+    const isGPIOL = metaLeft[1];
+    const labelL = metaLeft[2];
+    const notesL = userLeft.notes || "";
+    const enabledL = userLeft.enabled || false;
+    const orderL = userLeft.order || "";
+
+    const pinRight = metaRight[0];
+    const isGPIOR = metaRight[1];
+    const labelR = metaRight[2];
+    const notesR = userRight.notes || "";
+    const enabledR = userRight.enabled || false;
+    const orderR = userRight.order || "";
+
+    // Generate and append the row
+    const row = createGPIORow(pinLeft, labelL, isGPIOL, notesL, enabledL, orderL, pinRight, labelR, isGPIOR, notesR, enabledR, orderR, i / 2 + 1);
+    tableBody.appendChild(row);
+  }
+
+  // Attach live validation
+  document.querySelectorAll("select.order").forEach(select => {
+    select.addEventListener("change", () => checkDuplicates(false));
+  });
+
+  // Intercept form submission
+  document.getElementById("pluginForm").addEventListener("submit", function (e) {
+    e.preventDefault(); // Stop default submission
+
+    const hasDuplicates = checkDuplicates(true); // Show modal if needed
+
+    if (!hasDuplicates) {
+      this.submit(); // Only submit if no duplicates
+    }
+  });
+});
+
+function checkDuplicates(showModal = false) {
+  const orders = {};
+  const selects = document.querySelectorAll('.order');
+  let duplicates = [];
+
+  selects.forEach(select => {
+    const val = select.value;
+    if (val) {
+      if (orders[val]) {
+        orders[val]++;
+      } else {
+        orders[val] = 1;
+      }
+    }
+  });
+
+  // Show warning icons
+  selects.forEach(select => {
+    const val = select.value;
+    const td = select.parentElement;
+    const existingIcon = td.querySelector('.warning');
+    if (existingIcon) existingIcon.remove();
+
+    if (val && orders[val] > 1) {
+      const icon = document.createElement('span');
+      icon.className = 'warning';
+      icon.textContent = '⚠️';
+      td.appendChild(icon);
+      duplicates.push(val);
+    }
+  });
+
+  // Show modal if duplicates exist
+  if (showModal && duplicates.length > 0) {
+    document.getElementById('modalOverlay').style.display = 'block';
+    document.getElementById('modalDialog').style.display = 'block';
+  }
+
+  return duplicates.length > 0;
+}
+
+function closeModal() {
+  document.getElementById('modalOverlay').style.display = 'none';
+  document.getElementById('modalDialog').style.display = 'none';
+}
+
+</script>
+
+
+</body>
+</html>
