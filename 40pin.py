@@ -446,17 +446,19 @@ class update(ProtectedPage):
             pins.append(pin_data)
         print(f"New pins {json.dumps(pins, indent=2)}")
 
-        pins = assign_missing_orders(pins) # this is here only as safeguard, it should never change anything
         # Compare pin-by-pin
         if len(params.get("pins", [])) != len(pins):
             params["pins"] = pins
             changed = True
             reinit = True
-        else:
-            for original, submitted in zip(params.get("pins", []), pins):   #works only if both non-empty
+        else:            
+            for i in range(len(params.get("pins", []))):
+                original = params["pins"][i]
+                submitted = next((p for p in pins if p['pin'] == original['pin'] ), None)
+            
                 print(f"Comparing original {json.dumps(original)} with submitted {json.dumps(submitted)}")
                 if original.get("pin") == submitted.get("pin"):
-                    if( self.normalize_order(original.get("order")) != self.normalize_order(submitted.get("order")) 
+                    if( original.get("order") != submitted.get("order")
                        or original.get("enabled") != submitted.get("enabled") 
                     ):
                         changed = True
