@@ -293,11 +293,12 @@ def get_enabled_status(params, gpio_pin_number):
     return None
 
 def set_pin(gpio_pin, value):
-    print(f"Setting GPIO{gpio_pin} to '{value}'")
+    # print(f"Setting GPIO{gpio_pin} to '{value}'")
     try:
         resp = client.write_pin(gpio_pin, value)
         if resp.get("success"):
-            print(f"GPIO{gpio_pin} successfully updated.")
+            # print(f"GPIO{gpio_pin} successfully updated.")
+            pass
         else:
             m = f"Failed to update GPIO{gpio_pin}: {resp.get('message')}"
             print(m)
@@ -308,27 +309,31 @@ def set_pin(gpio_pin, value):
 
 
 #### change outputs when blinker signal received ####
-def on_zone_change(arg):  #  arg is just a necessary placeholder.
+def on_zone_change(name, **kw):  #  arg is just a necessary placeholder.
     """ Switch relays when core program signals a change in zone state."""
     
     global pi
     
-    print(f"Waiting for load params")
+    print(f"zones changed: {gv.srvals}")
+
+    # print(f"Waiting for load params")
     initial_load_params_complete.wait()
-    print(f"Load params done at least once")
+    # print(f"Load params done at least once")
 
-    print(f"Waiting for init pins")
+    # print(f"Waiting for init pins")
     initial_init_pins_complete.wait()
-    print(f"Init pins done at least once")
+    # print(f"Init pins done at least once")
 
-    with gv.output_srvals_lock:
+    with gv.output_srvals_lock:        
+        change = False
+        pin_values = []
         # for i in range(params[u"relays"]):
         # for pin_number in [p["pin"] for p in params["pins"]]:
-        print(f"Will iterate over params['pins']:")
-        print(f"{json.dumps(params['pins'], indent=2)}")
+        # print(f"Will iterate over params['pins']:")
+        # print(f"{json.dumps(params['pins'], indent=2)}")
         for s in range(len(gv.output_srvals)):  # iterate as many times as there are stations
             pin = next((p for p in params.get("pins", []) if p.get("order") == s+1), None)
-            print(f"Pin with order {s+1} is: {json.dumps(pin)}")            
+            # print(f"Pin with order {s+1} is: {json.dumps(pin)}")            
             if not pin:
                 # raise Exception(f"There is no pin with order {s}")
                 continue
@@ -337,19 +342,25 @@ def on_zone_change(arg):  #  arg is just a necessary placeholder.
             #that works with gpiod and GPIO
             i = next((p for p, val in enumerate(relay_pins) if val == gv.pin_map[pin.get("pin")]), None) 
 
-            print(f"Setting GPIO{relay_pins[i]}")
+            # print(f"Setting GPIO{relay_pins[i]}")
             try:
                 # skip disabled pins
                 if not get_enabled_status(params, relay_pins[i]):
-                    print(f"GPIO{relay_pins[i]} is NOT enabled")
-                    continue
-                print(f"GPIO{relay_pins[i]} IS enabled")
+                    # print(f"GPIO{relay_pins[i]} is NOT enabled")
+                    continue                
+                # print(f"GPIO{relay_pins[i]} IS enabled")
+                pin_info = client.get_pin_info(relay_pins[i])                
                 # if station is set to on and pin is enabled
                 if gv.output_srvals[s]:
                     if (
                         params[u"active"] == u"low"
                     ):  # if the relay type is active low, set the output low
                         if use_gpiod:
+                            pin_values.append(0)
+                            if pin_info.get("value") != 0:                                
+                                change = True
+                            else:
+                                continue
                             set_pin(relay_pins[i], 0)
                         elif gv.use_pigpio:
                             pi.write(relay_pins[i], 0)
@@ -357,6 +368,11 @@ def on_zone_change(arg):  #  arg is just a necessary placeholder.
                             GPIO.output(relay_pins[i], GPIO.LOW)
                     else:  # otherwise set it high
                         if use_gpiod:
+                            pin_values.append(1)
+                            if pin_info.get("value") != 1:                                
+                                change = True
+                            else:
+                                continue
                             set_pin(relay_pins[i], 1)
                         elif gv.use_pigpio:
                             pi.write(relay_pins[i], 1)
@@ -367,6 +383,11 @@ def on_zone_change(arg):  #  arg is just a necessary placeholder.
                         params[u"active"] == u"low"
                     ):  # if the relay type is active low, set the output high
                         if use_gpiod:
+                            pin_values.append(1)
+                            if pin_info.get("value") != 1:
+                                change = True
+                            else:
+                                continue
                             set_pin(relay_pins[i], 1)
                         elif gv.use_pigpio:
                             pi.write(relay_pins[i], 1)
@@ -374,15 +395,24 @@ def on_zone_change(arg):  #  arg is just a necessary placeholder.
                             GPIO.output(relay_pins[i], GPIO.HIGH)
                     else:  # otherwise set it low
                         if use_gpiod:
+                            pin_values.append(0)
+                            if pin_info.get("value") != 0:
+                                change = True
+                            else:
+                                continue
                             set_pin(relay_pins[i], 0)
                         elif gv.use_pigpio:
                             pi.write(relay_pins[i], 0)
                         else:
                             GPIO.output(relay_pins[i], GPIO.LOW)
+                                
             except Exception as e:
                 print(f"Problem switching relays for GPIO{relay_pins[i]}: {e}")
                 raise e
                 pass
+
+        if change:
+            print(f"pin values now {pin_values}")
 
 
 init_pins()
